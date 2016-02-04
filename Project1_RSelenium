@@ -1,0 +1,219 @@
+#install.packages("RSelenium")
+#install.packages("stringr")
+
+library(RSelenium)
+library(stringr)
+
+
+############################################################################
+#Datos para la navegación en SauceLab
+
+checkForServer()
+URL<-"http://www.clickbus.com.mx"
+User <- "carla2789"
+Pass <- "fe745549-27cb-4177-b832-47e987e4f818"
+Port <- 80
+Ip <- paste0(User, ':', Pass, "@ondemand.saucelabs.com")
+Browser <- "firefox"
+Version <- "26"
+Platform <- "Windows 8.1"
+Navegador<-NULL
+Nombre<-NULL
+Capablities<-NULL
+
+
+#############################################################################################
+
+consultafecha<-function()
+{
+nummes<-c("01","02","03","04","05","06","07","08","09","10","11","12")
+numdedias<-c(31,30,31,30,31,30,31,31,30,31,30,31)
+calendario<-cbind(nummes,numdedias)
+
+diaCalendario_hoy<-format(Sys.time(),"%d")
+mesCalendario_hoy<-format(Sys.time(),"%m")
+aCalendario_hoy<-format(Sys.time(),"%y")
+a_consulta<-aCalendario_hoy
+mes_consulta<-mesCalendario_hoy
+dia_consulta<-diaCalendario_hoy
+
+diamax<-calendario[which(calendario[,1]==mesCalendario_hoy),2]
+
+if(diamax==diaCalendario_hoy)
+{
+  dia_consulta="01"
+  
+  if(mesCalendario_hoy!="12")
+  {
+    mes_consulta=str_pad(as.integer(mesCalendario_hoy)+1,2,pad=0)
+    
+  }else{
+    
+    mes_consulta="01"
+    a_consulta=str_replace_all(paste("20",str_pad(as.integer(aCalendario_hoy)+1,2,pad=0))," ","")
+    
+  }
+  
+}else{
+  
+  dia_consulta=str_pad(as.integer(diaCalendario_hoy)+1,2,pad=0)
+  
+  
+}
+
+FechaConsulta=str_replace_all(paste(dia_consulta,"/",mes_consulta,"/",a_consulta)," ","")
+
+return(FechaConsulta)
+
+}
+
+###########################################################
+
+trim <- function (x) gsub("^\\s+|\\s+$", "", x)
+
+descargarRuta<-function(Origen,Destino)
+{
+  
+  
+  origen_path<-'//*[(@id = "originPlace")]'
+  try(origen<-Navegador$findElement(value=origen_path),silent=TRUE)
+  try(origen$clickElement(),silent=TRUE)
+  try(origen$sendKeysToActiveElement(list(Origen)),silent=TRUE)
+  try(Navegador$sendKeysToActiveElement(list(key='enter')), silent=TRUE)
+  
+  Sys.sleep(2)
+  destino_path<-'//*[(@id = "destinationPlace")]'
+  try(destino<-Navegador$findElement(value=destino_path), silent=TRUE)
+  try(destino$clickElement(), silent=TRUE)
+  try(destino$sendKeysToActiveElement(list(Destino)), silent=TRUE)
+  try(Navegador$sendKeysToActiveElement(list(key='enter')), silent=TRUE)
+  Sys.sleep(2)
+  
+  fecha_path<-'//*[(@id = "departureDate")]'
+  try(fecha<-Navegador$findElement(value=fecha_path), silent=TRUE)
+  Sys.sleep(2)
+  try(Navegador$maxWindowSize(), silent=TRUE)
+  try(fecha$clickElement(), silent=TRUE)
+  Sys.sleep(2)
+  try(fecha$sendKeysToActiveElement(list(FechaConsulta)), silent=TRUE)
+  try(Navegador$sendKeysToActiveElement(list(key='enter')), silent=TRUE)
+  
+  
+  consultar_path<-'//*[(@id = "btn-search")]'
+  try(consultar<-Navegador$findElement(value=consultar_path), silent=TRUE)
+  try(consultar$clickElement(), silent=TRUE)
+  
+  Sys.sleep(4)
+  
+  try(ScreenShot.i<-Navegador$screenshot(), silent=TRUE)
+  saveRDS(ScreenShot.i, Nombre, ascii=TRUE)
+  
+  
+  doc<-try(htmlParse(Navegador$getPageSource()[[1]]), silent=TRUE)
+  tabladat<-readHTMLTable(doc)
+  Destinos<-NULL
+  Ruta<-NULL
+  TotViajes<-length(tabladat)-1
+ 
+  for(i in 1:TotViajes)
+  {
+  
+  x<-data.frame(tabladat[[i]])
+  Marca<-trim(toString(x[[1]][1]))
+  Horario<-trim(substr(toString(x[[3]][1]),10,30))
+  Llegada<-trim(substr(toString(x[[1]][2]),10,30))
+  Destino_t<-trim(toString(x[[2]][2]))
+  Origen_t<-trim(toString(x[[4]][1]))
+  Clase<-trim(substr(toString(x[[5]][1]),45,100))
+  Precio<-trim(substr(toString(x[[6]][1]),466,500))
+  
+  Ruta<-cbind(Horario,Llegada,Origen_t,Destino_t,Precio,Marca,Clase,date(), Nombre, Origen, Destino)
+  colnames(Ruta)<-c("Hora_salida","Llegada","Terminal_Origen","Terminal_Destino",
+                    "Precio","Marca", "Clase",
+                    "Fecha de consulta", "Nombre de respaldo",
+                    "Origen","Destino")
+  
+  Destinos<-rbind(Destinos,Ruta)
+  
+  }
+  
+  try(Navegador$close(), silent=TRUE)
+  Sys.sleep(2)
+  try(Navegador$closeServer(), silent=TRUE)
+  
+  return(Destinos)
+}
+
+
+
+###########################################################################################
+
+
+
+################################################################################3
+#iniciar server y browser
+OrigenCB<-read.csv("OrigenCB.csv",sep=",")
+DestinoCB<-read.csv("DestinoCB.csv",sep=",")
+MatrizCB<-cbind(OrigenCB,DestinoCB)
+
+Vuelta=20
+j=10
+i=1
+
+while(j<=Vuelta)
+{
+  i=12097
+  ScreenShot.i<-NULL
+  TablaCB<-matrix(1:11,1)
+  Ruta<-NULL
+  colnames(TablaCB)<-c("Hora_salida","Llegada","Terminal_Origen","Terminal_Destino",
+                        "Precio","Marca", "Clase",
+                        "Fecha de consulta", "Nombre de respaldo",
+                        "Origen","Destino")
+  
+  for(i in 12097:13824)
+  {
+    FechaConsulta<-consultafecha()
+    Ruta<-NULL
+    
+    Nombre<-str_replace_all(paste(str_trim(i),"CB","_",j,"C8_v10.rds")," ","")
+    ExtraCapabilities <- list(name = Nombre, username = User, accessKey = Pass)
+    Navegador <- remoteDriver$new(remoteServerAddr = Ip, port = Port, browserName = Browser
+                                  , version = Version, platform = Platform
+                                  , extraCapabilities = ExtraCapabilities)
+    
+    library(RSelenium)
+    
+    Sys.sleep(2)
+    
+    try(checkForServer(), silent=TRUE)
+    try(startServer(), silent = TRUE)
+    
+    Sys.sleep(5)
+    try(Navegador$open(silent=TRUE), silent= TRUE)
+    try(Navegador$navigate(URL),silent = TRUE)
+    Sys.sleep(2)
+    
+    
+    
+    Origen<-toString(MatrizCB[i,1])
+    Destino<-toString(MatrizCB[i,2])
+    
+    
+    Sys.sleep(2)
+    try(Ruta<-descargarRuta(Origen,Destino),silent=TRUE)
+    try(TablaCB<-rbind(TablaCB,Ruta),silent=TRUE)
+    print(paste("Fila:",i))
+    
+    NombreTabla=str_replace_all(paste("Tabla","CB8","_",j,"v10.csv")," ","")
+    write.csv(TablaCB, NombreTabla)
+    
+    
+  }
+  
+  j=j+1
+  NombreTabla=str_replace_all(paste("Tabla","CB8","_",j,"v10.csv")," ","")
+  write.csv(TablaCB, NombreTabla)
+  print(paste("Vuelta:",j))
+  
+}
